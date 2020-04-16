@@ -1,0 +1,45 @@
+<!--
+    Copyright (c) 2020, Geronimo J Mirano
+
+    Version 0.0.1
+
+    See license at LICENSE.txt
+-->
+
+<!DOCTYPE html5>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <style>
+            body {
+                text-align: center;
+            }
+            canvas {
+                border: 1px solid #d3d3d3;
+                background-color: #f1f1f1;
+            }
+            #license {
+                color: lightgray;
+            }
+            #license a {
+                color: lightgray;
+            }
+        </style>
+    </head>
+    <body>
+
+        <h1>Block game.</h1>
+
+        <div id="gamezone"></div>
+
+        <script src="js/levels.js"></script>
+        <script src="js/secret_levels.js"></script>
+        <script src="js/entities.js"></script>
+        <script src="js/gamescript.js"></script>
+        <script>
+            gameStart(); // START THE GAME
+        </script>
+        <span id="license">Copyright (c) 2020, Geronimo J Mirano. <a href="LICENSE.txt">Click here for license.</a></span>
+    </body>
+</html>
