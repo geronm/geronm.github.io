@@ -41,14 +41,16 @@ function _isndef(val) { return (typeof val == "undefined") }
 
 var CAMERA_SMOOTH = 0.04;
 // TODO: Allow all these values to be re-rolled to allow camera zoom
-var TILES_HIGH = 18;
-var TILES_WIDE = 18;
-var TILE_HEIGHT = 100.0 / TILES_HIGH;
-var TILE_WIDTH = 100.0 / TILES_WIDE;
-var HORIZONTAL_BUFFER = (TILES_WIDE / 2);
-var VERTICAL_BUFFER = (TILES_HIGH / 2);
+var TILES_HIGH_MAX = 18;
+var TILES_WIDE_MAX = 18;
+var tiles_high = TILES_HIGH_MAX;
+var tiles_wide = TILES_WIDE_MAX;
+var tile_height = 100.0 / tiles_high;
+var tile_width = 100.0 / tiles_wide;
+var horizontal_buffer = (tiles_wide / 2);
+var vertical_buffer = (tiles_high / 2);
 var SKY_WIGGLE_FRAC = 0.3;  // how much the sky should be stretched +/- the edge of the game screen for parallax effect. 0.0 would be no parallax, 1.0 would mean you see the middle 1/3rd of the image when centered.
-var SHOW_FPS = true;
+var SHOW_FPS = false;
 
 var game = {
   canvas : document.createElement("canvas"),
@@ -87,8 +89,8 @@ function gameStart() {
 
   // Initialize game state
   game.state.frame = 0;
-  game.state.entities = [];
-  loadLevel("overworld", 20, 20);
+  loadLevel("simple_key_puzzle_1");
+  // loadLevel("simple_key_puzzle_3"); // DEBUG
 
   // ENGAGE Graphics
   gameResize();
@@ -99,7 +101,7 @@ function gameStart() {
 }
 
 
-function loadLevel(level_name, player_start_row, player_start_col) {
+function loadLevel(level_name) {
   var state = game.state;
   var context = game.context;
 
@@ -108,6 +110,7 @@ function loadLevel(level_name, player_start_row, player_start_col) {
   level_to_read = LEVELS[level_name]
 
   level = {}
+  level.name = level_name;
   Object.assign(level, level_to_read);
   level.terrain = [] // Want to deep clone this
   for (var r = 0; r < level.height; r++) { // deep-copy the initial terrain of the level
@@ -115,7 +118,7 @@ function loadLevel(level_name, player_start_row, player_start_col) {
   }
 
   state.level = level;
-  state.entity_map = new Map();  // Tripley-nested map (row -> (col -> (id -> entity))).
+  state.entity_collision_map = new Map();  // Tripley-nested map (row -> (col -> (id -> entity))).
 
   if (!_isndef(state.level.background_image_path)) {
     state.level.background_image = new Image();
@@ -123,7 +126,7 @@ function loadLevel(level_name, player_start_row, player_start_col) {
   }
 
   // Load entities
-  state.entities = [];
+  state.entities = new Map();
   if (level.entities) {
     for (const entity_to_read of level.entities) {
       var id = Math.floor(10**9 * Math.random());
@@ -161,21 +164,25 @@ function loadLevel(level_name, player_start_row, player_start_col) {
         }
       }
 
-      state.entities.push(entity);
+      state.entities.set(entity.id, entity);
     }
   }
 
   if (_isndef(state.player)) {
     state.player = {
-      row: player_start_row,
-      col: player_start_col,
+      row: 0,
+      col: 0,
     }
   }
 
   state.camera_row = state.player.row;
   state.camera_col = state.player.col;
 
+  tiles_high = Math.min(TILES_HIGH_MAX, level.height);
+  tiles_wide = Math.min(TILES_WIDE_MAX, level.width);
+
   console.log(state.entities)
+
 }
 
 
@@ -197,12 +204,12 @@ function gameRedraw() {
   // TODO background image tiled with light parallax
   if (!_isndef(state.level.background_image)) {
     var frac_camera_horizontal = 0.5;
-    if (state.level.width - HORIZONTAL_BUFFER > HORIZONTAL_BUFFER) {
-      frac_camera_horizontal = (state.camera_col - HORIZONTAL_BUFFER) / (state.level.width - HORIZONTAL_BUFFER - HORIZONTAL_BUFFER);
+    if (state.level.width - horizontal_buffer > horizontal_buffer) {
+      frac_camera_horizontal = (state.camera_col - horizontal_buffer) / (state.level.width - horizontal_buffer - horizontal_buffer);
     }
     var frac_camera_vertical = 0.5;
-    if (state.level.height - VERTICAL_BUFFER > VERTICAL_BUFFER) {
-      frac_camera_vertical = (state.camera_row - VERTICAL_BUFFER) / (state.level.height - VERTICAL_BUFFER - VERTICAL_BUFFER);
+    if (state.level.height - vertical_buffer > vertical_buffer) {
+      frac_camera_vertical = (state.camera_row - vertical_buffer) / (state.level.height - vertical_buffer - vertical_buffer);
     }
     var background_width = game.canvas.width * (1 + SKY_WIGGLE_FRAC + SKY_WIGGLE_FRAC);
     var background_height = game.canvas.height * (1 + SKY_WIGGLE_FRAC + SKY_WIGGLE_FRAC);
@@ -213,10 +220,10 @@ function gameRedraw() {
 
   // Render world based on camera position
   if (state.mode == MODE_PLAY || state.mode == MODE_LEVEL_EDIT) {
-    var lowest_visible_row_incl = Math.max(0, Math.floor(state.camera_row - TILES_HIGH / 2 - 4));
-    var highest_visible_row_excl = Math.min(state.level.height, Math.ceil(state.camera_row + TILES_HIGH / 2 + 4));
-    var lowest_visible_col_incl = Math.max(0, Math.floor(state.camera_col - TILES_WIDE / 2 - 4));
-    var highest_visible_col_excl = Math.min(state.level.width, Math.ceil(state.camera_col + TILES_WIDE / 2 + 4));
+    var lowest_visible_row_incl = Math.max(0, Math.floor(state.camera_row - tiles_high / 2 - 4));
+    var highest_visible_row_excl = Math.min(state.level.height, Math.ceil(state.camera_row + tiles_high / 2 + 4));
+    var lowest_visible_col_incl = Math.max(0, Math.floor(state.camera_col - tiles_wide / 2 - 4));
+    var highest_visible_col_excl = Math.min(state.level.width, Math.ceil(state.camera_col + tiles_wide / 2 + 4));
 
     for (var r = lowest_visible_row_incl; r < highest_visible_row_excl; r++) {
       for (var c = lowest_visible_col_incl; c < highest_visible_col_excl; c++) {
@@ -236,23 +243,23 @@ function gameRedraw() {
     }
 
     // Draw Entities
-    for (const entity of state.entities) {
+    state.entities.forEach(function(entity, id) {
       if (lowest_visible_row_incl <= entity.row && entity.row <= highest_visible_row_excl &&
           lowest_visible_col_incl <= entity.col && entity.col <= highest_visible_col_excl) {
         entityDraw(entity);
       }
-    }
+    });
 
-    // // DEBUG draw entity_map
-    // state.entity_map.forEach(function(r_map, r) {  // for r in state.entity_map
+    // // DEBUG draw entity_collision_map
+    // state.entity_collision_map.forEach(function(r_map, r) {  // for r in state.entity_collision_map
     //   if (BACON >= 0) { console.log(r_map); BACON -= 1; }
-    //   fillTextAtGridCoords(r, state.camera_col - HORIZONTAL_BUFFER + 1, r, "red");
-    //   r_map.forEach(function(c_map, c) {  // for c in state.entity_map[r]
+    //   fillTextAtGridCoords(r, state.camera_col - horizontal_buffer + 1, r, "red");
+    //   r_map.forEach(function(c_map, c) {  // for c in state.entity_collision_map[r]
     //     fillTextAtGridCoords(r, c, c, "green");
-    //     if (BACON >= 0) { console.log(state.entity_map.get(r).get(c)); BACON -= 1; }
-    //     c_map.forEach(function(id_map, id) {  // for id in state.entity_map[r][c]
+    //     if (BACON >= 0) { console.log(state.entity_collision_map.get(r).get(c)); BACON -= 1; }
+    //     c_map.forEach(function(id_map, id) {  // for id in state.entity_collision_map[r][c]
     //       // fillRectAtGridCoords(Number(r), Number(c), "map", "black");
-    //       // fillTextAtGridCoords(r, c, state.entity_map.get(r).get(c).get(id).type, "black");
+    //       // fillTextAtGridCoords(r, c, state.entity_collision_map.get(r).get(c).get(id).type, "black");
     //     });
     //   });
     // });
@@ -279,8 +286,8 @@ var display_last_time = Date.now();
 var BACON = 5;
 
 function fillRectAtGridCoords(r, c, fill_style) {
-  var tile_canvas_width = TILE_WIDTH / 100.0 * game.canvas.width;
-  var tile_canvas_height = TILE_HEIGHT / 100.0 * game.canvas.height;
+  var tile_canvas_width = tile_width / 100.0 * game.canvas.width;
+  var tile_canvas_height = tile_height / 100.0 * game.canvas.height;
   var x = (game.canvas.height / 2) + (c - game.state.camera_col) * (tile_canvas_height);
   var y = (game.canvas.width / 2) + (r - game.state.camera_row) * (tile_canvas_width);
   game.context.fillStyle = fill_style;
@@ -294,8 +301,8 @@ function fillRectAtGridCoords(r, c, fill_style) {
 
 
 function fillTextAtGridCoords(r, c, text, fill_style) {
-  var tile_canvas_width = TILE_WIDTH / 100.0 * game.canvas.width;
-  var tile_canvas_height = TILE_HEIGHT / 100.0 * game.canvas.height;
+  var tile_canvas_width = tile_width / 100.0 * game.canvas.width;
+  var tile_canvas_height = tile_height / 100.0 * game.canvas.height;
   var x = (game.canvas.height / 2) + (c - game.state.camera_col) * (tile_canvas_height);
   var y = (game.canvas.width / 2) + (r - game.state.camera_row) * (tile_canvas_width);
   game.context.fillStyle = fill_style;
@@ -311,8 +318,8 @@ function fillTextAtGridCoords(r, c, text, fill_style) {
 
 
 function drawImageAtGridCoords(r, c, image) {
-  var tile_canvas_width = TILE_WIDTH / 100.0 * game.canvas.width;
-  var tile_canvas_height = TILE_HEIGHT / 100.0 * game.canvas.height;
+  var tile_canvas_width = tile_width / 100.0 * game.canvas.width;
+  var tile_canvas_height = tile_height / 100.0 * game.canvas.height;
   var x = (game.canvas.height / 2) + (c - game.state.camera_col) * (tile_canvas_height);
   var y = (game.canvas.width / 2) + (r - game.state.camera_row) * (tile_canvas_width);
   game.context.drawImage(
@@ -327,7 +334,6 @@ function drawImageAtGridCoords(r, c, image) {
 
 function gameStep() {
   var state = game.state;
-  var context = game.context;
 
   state.frame += 1;
 
@@ -339,70 +345,81 @@ function gameStep() {
     var camera_row_speed = 0;
     var camera_col_speed = 0;
     var row_off = state.player.row - state.camera_row;
-    if (row_off > TILES_HIGH / 4) {
-      camera_row_speed = Math.pow(row_off - TILES_HIGH / 4, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
-    } else if (row_off < -TILES_HIGH / 4) {
-      camera_row_speed = Math.pow(TILES_HIGH / 4 + row_off, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
+    if (row_off > tiles_high / 4) {
+      camera_row_speed = Math.pow(row_off - tiles_high / 4, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
+    } else if (row_off < -tiles_high / 4) {
+      camera_row_speed = Math.pow(tiles_high / 4 + row_off, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
     }
     var col_off = state.player.col - state.camera_col;
-    if (col_off > TILES_WIDE / 4) {
-      camera_col_speed = Math.pow(col_off - TILES_WIDE / 4, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
-    } else if (col_off < -TILES_WIDE / 4) {
-      camera_col_speed = Math.pow(TILES_WIDE / 4 + col_off, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
+    if (col_off > tiles_wide / 4) {
+      camera_col_speed = Math.pow(col_off - tiles_wide / 4, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
+    } else if (col_off < -tiles_wide / 4) {
+      camera_col_speed = Math.pow(tiles_wide / 4 + col_off, 3) * CAMERA_SMOOTH;  // Keep it smooooth.
     }
     // var col_off = state.player.col - state.camera_col;
-    // if (Math.abs(col_off) > TILES_WIDE / 4) {
+    // if (Math.abs(col_off) > tiles_wide / 4) {
     //   camera_col_speed = col_off * CAMERA_SMOOTH;  // Keep it smooooth.
     // }
     state.camera_row += camera_row_speed;
     state.camera_col += camera_col_speed;
 
     // Collision-check camera against the edge of the world
-    if (state.level.height - VERTICAL_BUFFER <= VERTICAL_BUFFER) {
+    if (state.level.height - vertical_buffer <= vertical_buffer) {
       state.camera_row = state.level.height / 2;  // view perfectly centered if whole board fits on-screen.
     } else {
-      var too_high = state.camera_row < VERTICAL_BUFFER;
-      var too_low = state.camera_row > state.level.height - VERTICAL_BUFFER;
+      var too_high = state.camera_row < vertical_buffer;
+      var too_low = state.camera_row > state.level.height - vertical_buffer;
       if (too_high) {
-        state.camera_row = VERTICAL_BUFFER;
+        state.camera_row = vertical_buffer;
       } else if (too_low) {
-        state.camera_row = state.level.height - VERTICAL_BUFFER;
+        state.camera_row = state.level.height - vertical_buffer;
       }
     }
 
-    if (state.level.width - HORIZONTAL_BUFFER <= HORIZONTAL_BUFFER) {
+    if (state.level.width - horizontal_buffer <= horizontal_buffer) {
       state.camera_col = state.level.width / 2;  // view perfectly centered if whole board fits on-screen.
     } else {
-      var too_left = state.camera_col < HORIZONTAL_BUFFER;
-      var too_right = state.camera_col > state.level.width - HORIZONTAL_BUFFER;
+      var too_left = state.camera_col < horizontal_buffer;
+      var too_right = state.camera_col > state.level.width - horizontal_buffer;
       if (too_left) {
-        state.camera_col = HORIZONTAL_BUFFER;
+        state.camera_col = horizontal_buffer;
       } else if (too_right) {
-        state.camera_col = state.level.width - HORIZONTAL_BUFFER;
+        state.camera_col = state.level.width - horizontal_buffer;
       }
     }
 
-    // // TODO: Allow all these values to be re-rolled to allow camera zoom
-    // TILES_HIGH += 0.02;
-    // TILES_WIDE += 0.02;
-    // TILE_HEIGHT = 100.0 / TILES_HIGH;
-    // TILE_WIDTH = 100.0 / TILES_WIDE;
-    // HORIZONTAL_BUFFER = (TILES_WIDE / 2);
-    // VERTICAL_BUFFER = (TILES_HIGH / 2);
+    reformCamera(tiles_wide, tiles_high);
 
     // PLAYER UPDATE
     state.player.row += 0.0006;
     state.player.col -= 0.0006;
 
     // ENTITIES UPDATE
-    for (const entity of state.entities) {
+    state.entities.forEach(function(entity, id) {
       entityUpdate(entity);
-    }
+    });
   } else {
     console.log("In unimplemented mode: " + state.mode)
   }
 
+  if (!_isndef(state.loading_level)) {
+    loadLevel(state.loading_level);
+    state.loading_level = undefined
+  }
+
 };
+
+
+// // TODO: Allow all these values to be re-rolled to allow camera zoom
+function reformCamera(tiles_high, tiles_wide) {
+  tiles_high += 0.02;
+  tiles_wide += 0.02;
+  tile_height = 100.0 / tiles_high;
+  tile_width = 100.0 / tiles_wide;
+  horizontal_buffer = (tiles_wide / 2);
+  vertical_buffer = (tiles_high / 2);
+}
+
 
 var last_time = Date.now();
 function mainLoop() {

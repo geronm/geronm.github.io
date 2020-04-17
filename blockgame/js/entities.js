@@ -99,7 +99,7 @@ function entityUpdateMovement(entity) {
   }
 
   // ENTITY-ENTITY COLLISION
-  // don't assume our dst square is in entity_map yet -- might be speculative, trying
+  // don't assume our dst square is in entity_collision_map yet -- might be speculative, trying
   // to move there
   result = entityAllEntityCollideAtDst(entity);
   if (result["result"] == "blocked") {
@@ -123,11 +123,10 @@ function entityUpdateMovement(entity) {
     }
   }
 
-  // hole! delete other entities
-  if (entity.hole && entity.move_frac == 1.0) {
-    if (state.entity_map.has(entity.row_dst) && state.entity_map.get(entity.row_dst).has(entity.col_dst) && state.entity_map.get(entity.row_dst).get(entity.col_dst).size > 1) {
-      console.log("hole");
-      state.entity_map.get(entity.row_dst).get(entity.col_dst).forEach(function(other_entity, other_id) {
+  // triggerable! delete other entities
+  if (entity.triggerable && entity.move_frac == 1.0) {
+    if (state.entity_collision_map.has(entity.row_dst) && state.entity_collision_map.get(entity.row_dst).has(entity.col_dst) && state.entity_collision_map.get(entity.row_dst).get(entity.col_dst).size > 1) {
+      state.entity_collision_map.get(entity.row_dst).get(entity.col_dst).forEach(function(other_entity, other_id) {
         if (other_entity.id != entity.id) {
           other_entity.move_frac = Math.max(0.0, Math.min(1.0, (game.state.frame - other_entity.last_move_start_frame) * other_entity.movement_speed / game.fps));
           if ((other_entity.move_frac == 0.0 &&
@@ -136,17 +135,8 @@ function entityUpdateMovement(entity) {
               (other_entity.move_frac == 1.0 &&
                entity.row_dst == other_entity.row_dst &&
                entity.col_dst == other_entity.col_dst)) {
-            // FINISH HIM!! Other entity done fallen into the hole, now it meets our WRATH
-            removeMapEntity(other_entity, other_entity.row_src, other_entity.col_src);
-            if (other_entity.row_dst != other_entity.row_src || other_entity.col_dst != other_entity.col_src) { removeMapEntity(other_entity, other_entity.row_dst, other_entity.col_dst); }
-            other_entity.row_src = 0;
-            other_entity.col_src = 0;
-            other_entity.row_dst = 0;
-            other_entity.col_dst = 0;
-            other_entity.row = 0;
-            other_entity.col = 0;
-            other_entity.ghost = true;
-            other_entity.no_clip = true;
+            // FINISH HIM!! Other entity done fallen into the triggerable, now it meets our WRATH
+            entity.on_trigger(entity, other_entity);
           }
         }
       });
@@ -176,9 +166,9 @@ function entityAllTerrainCollideAtDst(entity) {
 
 function entityAllEntityCollideAtDst(entity) {
   var outer_result = {result : null};
-  if (game.state.entity_map.has(entity.row_dst)) {
-    if (game.state.entity_map.get(entity.row_dst).has(entity.col_dst)) {
-      game.state.entity_map.get(entity.row_dst).get(entity.col_dst).forEach(function(other_entity, id) {
+  if (game.state.entity_collision_map.has(entity.row_dst)) {
+    if (game.state.entity_collision_map.get(entity.row_dst).has(entity.col_dst)) {
+      game.state.entity_collision_map.get(entity.row_dst).get(entity.col_dst).forEach(function(other_entity, id) {
         result = entityEntityCollide(entity, other_entity);
         if (result == "blocked") {
           outer_result = {result : "blocked"};
@@ -264,7 +254,7 @@ function entityEntityCollide(e_self, e_other) {
           return "blocked";
         }
         // Note: the below entity collision check WOULD cause the pushed entity to
-        // collide with the original moving entity (assuming it's in the entity_map)
+        // collide with the original moving entity (assuming it's in the entity_collision_map)
         // if it weren't for the fact that there's an exception for moving-moving
         // collisions where two entities moving together through neighboring squares
         // in sync at compatible speeds are considered not-colliding.
@@ -317,22 +307,31 @@ function entityEntityCollide(e_self, e_other) {
 }
 
 
+function deleteEntity(entity) {
+  removeMapEntity(entity, entity.row_src, entity.col_src);
+  if (entity.row_dst != entity.row_src || entity.col_dst != entity.col_src) {
+    removeMapEntity(entity, entity.row_dst, entity.col_dst);
+  }
+  game.state.entities.delete(entity.id);
+}
+
+
 function removeMapEntity(entity, row, col) {
   var state = game.state;
-  if (!state.entity_map.has(row) ||
-      !state.entity_map.get(row).has(col) ||
-      !state.entity_map.get(row).get(col).has(entity.id)) {
+  if (!state.entity_collision_map.has(row) ||
+      !state.entity_collision_map.get(row).has(col) ||
+      !state.entity_collision_map.get(row).get(col).has(entity.id)) {
     console.log("BAD. VERY unclean, requested removal of entity not in map.");
     console.log(row, col);
     console.log(entity);
     return false;
   } else {
     // we happy
-    state.entity_map.get(row).get(col).delete(entity.id);
-    if (state.entity_map.get(row).get(col).size == 0) {
-      state.entity_map.get(row).delete(col);
-      if (state.entity_map.get(row).size == 0) {
-        state.entity_map.delete(row);
+    state.entity_collision_map.get(row).get(col).delete(entity.id);
+    if (state.entity_collision_map.get(row).get(col).size == 0) {
+      state.entity_collision_map.get(row).delete(col);
+      if (state.entity_collision_map.get(row).size == 0) {
+        state.entity_collision_map.delete(row);
       }
     }
     return true;
@@ -342,9 +341,9 @@ function removeMapEntity(entity, row, col) {
 
 function insertMapEntity(entity, row, col) {
   var state = game.state;
-  if (!state.entity_map.has(row)) { state.entity_map.set(row, new Map()); };
-  if (!state.entity_map.get(row).has(col)) { state.entity_map.get(row).set(col, new Map()); };
-  state.entity_map.get(row).get(col).set(entity.id, entity);
+  if (!state.entity_collision_map.has(row)) { state.entity_collision_map.set(row, new Map()); };
+  if (!state.entity_collision_map.get(row).has(col)) { state.entity_collision_map.get(row).set(col, new Map()); };
+  state.entity_collision_map.get(row).get(col).set(entity.id, entity);
 }
 
 
@@ -400,32 +399,43 @@ function entityInitRandomWalk(entity) {
 function entityUpdateRandomWalk(entity) {
   if (game.state.frame - entity.last_random_walk_start_frame > game.fps * entity.random_walk_interval && entity.move_frac == 1.0) {
     entity.movement_speed = entity.random_walk_speed;
-    // Make a random move!
-    var possible_moves = [
-      // {r: 0, c: 0},
-      {r: 1, c: 0},
-      {r: 0, c: 1},
-      {r:-1, c: 0},
-      {r: 0, c:-1},
-    ];
-    possible_moves = possible_moves.filter(function(a_move) {
-      var entity_copy = {};
-      Object.assign(entity_copy, entity);
-      entity_copy.row_dst = entity.row_dst + a_move.r;
-      entity_copy.col_dst = entity.col_dst + a_move.c;
-      if (entityAllTerrainCollideAtDst(entity_copy) == "blocked") {
-        return false;
+    // Make a random move! Try 10 times since sometimes the only
+    // way to know whether you can move in a certain direction is to
+    // try the move() command.
+    for (var i=0; i < 10; i++) {
+      var possible_moves = [
+        // {r: 0, c: 0},
+        {r: 1, c: 0},
+        {r: 0, c: 1},
+        {r:-1, c: 0},
+        {r: 0, c:-1},
+      ];
+      possible_moves = possible_moves.filter(function(a_move) {
+        var entity_copy = {};
+        Object.assign(entity_copy, entity);
+        entity_copy.row_dst = entity.row_dst + a_move.r;
+        entity_copy.col_dst = entity.col_dst + a_move.c;
+        if (entityAllTerrainCollideAtDst(entity_copy) == "blocked") {
+          return false;
+        }
+        if (entityAllEntityCollideAtDst(entity_copy)["result"] == "blocked") {
+          return false;
+        }
+        return true;
+      });
+      if (possible_moves.length > 0) {
+        var cur_move = possible_moves[Math.floor(Math.random() * possible_moves.length)]
+        move(entity, entity.row_dst + cur_move.r, entity.col_dst + cur_move.c);
+        if (entity.row_dst != entity.row || entity.col_dst != entity.col) {
+          break;
+        }
+      } else {
+        console.log("I can't move! " + entity.id + " " + entity.type);
+        break;
       }
-      if (entityAllEntityCollideAtDst(entity_copy)["result"] == "blocked") {
-        return false;
+      if (i >= 2) {
+        console.log("i > 2!!!");
       }
-      return true;
-    });
-    if (possible_moves.length > 0) {
-      var cur_move = possible_moves[Math.floor(Math.random() * possible_moves.length)]
-      move(entity, entity.row_dst + cur_move.r, entity.col_dst + cur_move.c);
-    } else {
-      console.log("I can't move! " + entity.id + " " + entity.type);
     }
 
     // Reset timer
@@ -452,7 +462,6 @@ function entityUpdateInput(entity) {
     console.log("BAAAAAAAAAAAAAAAAAAAAAAAAAAAAD BAD BAD");
   }
 
-  
   game.down_keys.forEach(function(key) {
     if (!entity.down_keys_to_first_frame.has(key)) {
       entity.hit_keys.add(key);
@@ -483,6 +492,7 @@ function entityUpdateInput(entity) {
       if (key_should_take_action("ArrowUp")) { r -= 1; };
       if (key_should_take_action("ArrowRight")) { c += 1; };
       if (key_should_take_action("ArrowLeft")) { c -= 1; };
+      if (key_should_take_action("KeyE")) { game.state.loading_level = game.state.level.name; };
 
       if (r != 0) {
         c = 0;
@@ -557,6 +567,41 @@ ENTITY_PROPERTIES = {
     update : entityUpdateTrackFollow,
     draw : function(entity) {},
   },
+  door : {
+    init : function(entity) {},
+    update : function(entity) {
+      if (entity.energy >= entity.energy_required) {
+        entity.open = true;
+      }
+      entity.ghost = entity.open;
+    },
+    draw : function(entity) {
+      if (_isndef(ENTITY_TYPES.door_open_image)) {
+        ENTITY_TYPES.door_open_image = new Image();
+        ENTITY_TYPES.door_open_image.src = "img/door_open.png";
+      }
+      if (_isndef(ENTITY_TYPES.door_closed_image)) {
+        ENTITY_TYPES.door_closed_image = new Image();
+        ENTITY_TYPES.door_closed_image.src = "img/door_closed.png";
+      }
+
+      if (entity.open) {
+        drawImageAtGridCoords(entity.row, entity.col, ENTITY_TYPES.door_open_image);
+      } else {
+        drawImageAtGridCoords(entity.row, entity.col, ENTITY_TYPES.door_closed_image);
+      }
+    },
+  },
+  target : {
+    init : function(entity) {},
+    update : function(entity) {
+      if (_isndef(entity.target)) {
+        entity.target = entity.target_finder(entity);
+      }
+      entity.target_update(entity)
+    },
+    draw : function(entity) {},
+  },
 }
 
 
@@ -567,14 +612,14 @@ ENTITY_TYPES = {
     input_speed : 10.0,
     image_path : "img/player.png",
     is_player : true,
-    is_hole : false,
+    triggerable : false,
     // ghost : true,
     // no_clip : true,
-    can_push : true,
+    can_push : false,
     track : [],
   },
   roamer : {
-    properties : ["movement", "random_walk"],
+    properties : ["movement", "random_walk", "energy_holder"],
     random_walk_speed : 15.0,
     random_walk_interval : 2.0, // 3.0,
     fill_style: "green",
@@ -591,11 +636,53 @@ ENTITY_TYPES = {
     image_path: "img/crate1.png",
     can_push : true,
     has_energy : false,
-    heavy : true, // heavy == cannot be pushed in a train
+    heavy : false, // heavy == cannot be pushed in a train
   },
   hole : {
     properties : ["movement"],
-    hole : true,
+    triggerable : true,
+    on_trigger : function(entity, other_entity) {
+      deleteEntity(other_entity);
+    },
     ghost : true,
+  },
+  door : {
+    properties : ["movement", "door"],
+    triggerable : true,
+    target_level_name : "overworld",
+    on_trigger : function(entity, other_entity) {
+      deleteEntity(other_entity);
+      if (other_entity.is_player) {
+        game.state.loading_level = entity.target_level_name;
+      };
+    },
+    energy : 0,
+    energy_required : 1,
+    open : false,
+    ghost : false,  // changes based on state
+  },
+  receptacle : {
+    properties : ["movement", "target"],
+    target_finder : function (entity) {
+      var new_target;
+      game.state.entities.forEach(function(target_entity, id) {
+        if (target_entity.type == "door") {
+          new_target = target_entity;
+        }
+      });
+      return new_target;
+    },
+    target_update : function (entity) {},
+    triggerable : true,
+    on_trigger : function(entity, other_entity) {
+      if (other_entity.has_energy) {
+        entity.target.energy += 1;
+        other_entity.has_energy = false;
+        console.log("accepted energy, now have " + entity.target.energy + " energy");
+      }
+    },
+    energy_required : 1,
+    ghost : true,
+    image_path: "img/receptor_orig.png",
   },
 }
