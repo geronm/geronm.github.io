@@ -1,0 +1,14 @@
+This is a shallow clone of the Mozilla hello-webxr repo:
+
+https://github.com/mozillareality/hello-webxr
+
+commit sha: 325144288444d51b63b09f3289aaa09ddb83163b
+
+(shallow because it reduces size by 3x)
+
+See license in LICENSE.
+
+I may have modified the contents of this repo; those modifications are not endorsed by Mozilla.
+
+-Geronimo Mirano
+
